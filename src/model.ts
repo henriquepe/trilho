@@ -321,6 +321,23 @@ export function deleteIssue(state: AppState, id: string): AppState {
   };
 }
 
+export function addComment(
+  state: AppState,
+  issueId: string,
+  input: { author: string; body: string },
+): AppState {
+  const body = input.body.trim();
+  if (!body) throw new Error('O comentário não pode ficar vazio.');
+  const now = nowIso();
+  const comment = { id: newId(), author: input.author.trim() || 'Trilho', body, createdAt: now };
+  return {
+    ...state,
+    issues: state.issues.map((i) =>
+      i.id === issueId ? { ...i, comments: [...i.comments, comment], updatedAt: now } : i,
+    ),
+  };
+}
+
 export function subIssues(state: AppState, parentId: string): Issue[] {
   return state.issues.filter((i) => i.parentId === parentId).sort((a, b) => a.number - b.number);
 }

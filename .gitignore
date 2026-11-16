@@ -10,3 +10,4 @@ imports/
 # Local agent config
 .claude/
 .DS_Store
+mcp/dist

@@ -1,6 +1,6 @@
 [package]
 name = "trilho"
-version = "0.1.0"
+version = "0.2.0"
 description = "Trilho: backlogs, projetos e issues"
 authors = ["Henrique Pires"]
 license = "MIT"
@@ -23,3 +23,4 @@ tauri = { version = "2.12.6", features = [] }
 tauri-plugin-log = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
+notify = "8"

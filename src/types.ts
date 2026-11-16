@@ -31,7 +31,7 @@ export interface Label {
   color: string;
 }
 
-/** Read-only comment, kept from an import (e.g. Linear). */
+/** Comment on an issue: imported (e.g. from Linear) or added through the MCP connector. */
 export interface IssueComment {
   id: string;
   author: string;
