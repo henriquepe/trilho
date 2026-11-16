@@ -1,6 +1,6 @@
 import { createStore } from './lib/createStore';
 import * as model from './model';
-import { loadState, saveState } from './persist';
+import { loadState, onExternalChange, saveState } from './persist';
 import type { AppState, Project } from './types';
 
 const store = createStore<AppState>(model.emptyState());
@@ -37,6 +37,16 @@ export async function hydrate(): Promise<void> {
     if (saveTimer) return;
     const latest = await loadState();
     if (latest !== null) store.set(model.parseState(latest));
+  });
+  // Desktop app: pick up changes made by the MCP server. A pending local edit wins
+  // (it is saved within 250 ms), so the app never discards what the user just typed.
+  await onExternalChange((raw) => {
+    if (saveTimer) return;
+    try {
+      store.set(model.parseState(raw));
+    } catch (error) {
+      console.error('Ignored invalid external data', error);
+    }
   });
   window.addEventListener('pagehide', () => {
     if (saveTimer) void persistNow();

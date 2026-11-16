@@ -15,6 +15,7 @@ The interface is in Portuguese (pt-BR).
 - **Import and export as JSON.** Importing merges into your data and never replaces it, so backups can be restored safely.
 - **Import from Linear.** A read-only script exports a Linear workspace into a Trilho file (see below).
 - **macOS desktop app** built with Tauri, plus the same app in any browser.
+- **MCP connector for Claude**: Claude can search, create and update your issues (see below).
 
 ## Install on macOS
 
@@ -58,6 +59,64 @@ In Trilho, click **Importar** and choose the file. What comes over:
 - Projects, labels, sub-issues, comments and attachments (as links).
 
 The `imports/` folder is git-ignored because it holds your data.
+
+## Use with Claude (MCP connector)
+
+Trilho ships its own [MCP](https://modelcontextprotocol.io) server. Claude, or any other MCP client, can use it to search, create and update your issues and projects.
+
+The desktop app keeps the workspace in one file, which is also the file the server reads and writes:
+
+| OS | Path |
+| --- | --- |
+| macOS | `~/Library/Application Support/com.henriquepires.trilho/trilho.json` |
+| Linux | `~/.local/share/com.henriquepires.trilho/trilho.json` |
+| Windows | `%APPDATA%\com.henriquepires.trilho\trilho.json` |
+
+Changes made through the connector show up in the open app right away.
+
+Build the server (Node 20 or newer):
+
+```bash
+npm install
+npm run build:mcp    # creates mcp/dist/trilho-mcp.mjs
+```
+
+**Claude Code:**
+
+```bash
+claude mcp add -s user trilho -e TRILHO_AUTHOR="Your Name" -- node /path/to/trilho/mcp/dist/trilho-mcp.mjs
+```
+
+**Claude Desktop:** add the server to `claude_desktop_config.json`, then restart Claude.
+
+```json
+{
+  "mcpServers": {
+    "trilho": {
+      "command": "node",
+      "args": ["/path/to/trilho/mcp/dist/trilho-mcp.mjs"],
+      "env": { "TRILHO_AUTHOR": "Your Name" }
+    }
+  }
+}
+```
+
+Tools:
+
+| Read | Write |
+| --- | --- |
+| `list_backlogs`, `list_projects`, `list_labels`, `search_issues`, `get_issue` | `create_issue`, `update_issue`, `add_comment`, `create_backlog`, `create_project`, `update_project` |
+
+There are no delete tools. To close an issue, set its status to `done` or `canceled`.
+
+Environment variables:
+
+- `TRILHO_DATA_FILE` points the server at another file.
+- `TRILHO_AUTHOR` sets the name on comments added through the connector (default: `Claude`).
+
+Open the app once before using the connector, so the data file exists.
+
+If you edit in the app while Claude changes the same workspace, the last save wins. A change you are still typing is never overwritten.
 
 ## Stack
 
