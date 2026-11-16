@@ -1,0 +1,12 @@
+node_modules
+dist
+
+# Tauri
+src-tauri/target
+src-tauri/gen
+# Data exported from other tools (personal data)
+imports/
+
+# Local agent config
+.claude/
+.DS_Store
