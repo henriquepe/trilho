@@ -1,4 +1,6 @@
 import {
+  CloudIcon,
+  CloudOffIcon,
   DownloadIcon,
   FolderIcon,
   InboxIcon,
@@ -18,8 +20,8 @@ import {
 import { exportData, importData } from '@/lib/transfer';
 import { cn } from '@/lib/utils';
 import { navigate, paths, type Route } from '@/router';
-import { actions, useAppState } from '@/store';
-import { askConfirm, openNewIssue, openPalette, openProjectModal, openTeamModal } from '@/uiStore';
+import { actions, cloudStatus, useAppState } from '@/store';
+import { askConfirm, openCloudModal, openNewIssue, openPalette, openProjectModal, openTeamModal } from '@/uiStore';
 import { ColorDot, Logo } from './icons';
 import { Count } from './shared';
 
@@ -39,6 +41,7 @@ function Heading({ children, action }: { children: ReactNode; action: ReactNode 
 export function Sidebar({ route }: { route: Route }) {
   const state = useAppState();
   const fileRef = useRef<HTMLInputElement>(null);
+  const cloud = cloudStatus.use();
   const openCount = (teamId: string) =>
     state.issues.filter((i) => i.teamId === teamId && i.status !== 'done' && i.status !== 'canceled').length;
 
@@ -174,6 +177,20 @@ export function Sidebar({ route }: { route: Route }) {
         </Button>
         <Button variant="ghost" size="xs" className="text-muted-foreground" onClick={() => fileRef.current?.click()}>
           <UploadIcon /> Importar
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          className={cn(
+            'ml-auto text-muted-foreground',
+            cloud && cloud.state !== 'offline' && 'text-foreground',
+            cloud?.state === 'offline' && 'text-destructive',
+          )}
+          onClick={openCloudModal}
+          aria-label={cloud?.state === 'offline' ? `Nuvem: ${cloud.message}` : cloud ? 'Nuvem: conectada' : 'Conectar à nuvem'}
+          title={cloud?.state === 'offline' ? cloud.message : cloud ? 'Sincronizado com a nuvem' : 'Conectar à nuvem'}
+        >
+          {cloud?.state === 'offline' ? <CloudOffIcon /> : <CloudIcon />}
         </Button>
         <input
           ref={fileRef}
