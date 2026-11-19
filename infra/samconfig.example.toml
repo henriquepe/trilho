@@ -1,0 +1,14 @@
+# Copy to infra/samconfig.toml (git-ignored) and fill in your values.
+version = 0.1
+
+[default.global.parameters]
+stack_name = "trilho-production"
+
+[default.deploy.parameters]
+region = "sa-east-1"
+capabilities = "CAPABILITY_IAM"
+confirm_changeset = false
+resolve_s3 = true
+s3_prefix = "trilho-production"
+parameter_overrides = "BillingAlertEmail=you@example.com MonthlyBudget=5"
+tags = "Project=trilho Env=production"

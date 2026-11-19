@@ -9,7 +9,9 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "build:mcp": "esbuild mcp/index.ts --bundle --platform=node --format=esm --target=node20 --outfile=mcp/dist/trilho-mcp.mjs --log-level=warning"
+    "build:mcp": "esbuild mcp/index.ts --bundle --platform=node --format=esm --target=node20 --outfile=mcp/dist/trilho-mcp.mjs --log-level=warning",
+    "build:lambda": "node infra/build.mjs",
+    "deploy": "npm run build:lambda && cd infra && sam deploy"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1172.0",

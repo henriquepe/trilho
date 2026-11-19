@@ -1,0 +1,205 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: Trilho hosted — MCP connector + workspace API. Lambda + HTTP API + S3, no VPC.
+
+# Cost model: a single Lambda behind an HTTP API and one versioned S3 object.
+# No VPC (no NAT Gateway), 7-day logs, throttled routes and a tagged monthly budget.
+
+Parameters:
+  BillingAlertEmail:
+    Type: String
+    Description: E-mail that receives the budget alerts
+  MonthlyBudget:
+    Type: Number
+    Default: 5
+    Description: USD per month for resources tagged Project=trilho
+  TokenParameterName:
+    Type: String
+    Default: /trilho/production/tokens
+    Description: SSM SecureString with the accepted bearer tokens (comma-separated). Created outside the stack.
+  DomainName:
+    Type: String
+    Default: ""
+    Description: Optional custom domain (e.g. trilho.example.com). Empty uses the execute-api URL.
+  CertificateArn:
+    Type: String
+    Default: ""
+    Description: ACM certificate in this region covering DomainName (required when DomainName is set)
+
+Conditions:
+  HasDomain: !Not [!Equals [!Ref DomainName, ""]]
+
+Resources:
+  WorkspaceBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub trilho-production-data-${AWS::AccountId}
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      # Every save is a new version (~1 MB). Old versions are the undo history: keep 30 days, at most 100 (the S3 maximum).
+      LifecycleConfiguration:
+        Rules:
+          - Id: expire-old-versions
+            Status: Enabled
+            NoncurrentVersionExpiration:
+              NoncurrentDays: 30
+              NewerNoncurrentVersions: 100
+      Tags:
+        - { Key: Project, Value: trilho }
+        - { Key: Env, Value: production }
+
+  TrilhoFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: trilho-production-api
+      Description: Trilho MCP connector and workspace API
+      CodeUri: build/
+      Handler: lambda.handler
+      Runtime: nodejs22.x
+      Architectures: [arm64]
+      MemorySize: 1024
+      Timeout: 20
+      LoggingConfig:
+        LogFormat: JSON
+      Environment:
+        Variables:
+          TRILHO_BUCKET: !Ref WorkspaceBucket
+          TRILHO_OBJECT_KEY: workspace.json
+          TRILHO_TOKEN_PARAMETER: !Ref TokenParameterName
+          TRILHO_AUTHOR: Claude
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: [s3:GetObject, s3:PutObject]
+              Resource: !Sub ${WorkspaceBucket.Arn}/workspace.json
+            - Effect: Allow
+              Action: s3:ListBucket
+              Resource: !GetAtt WorkspaceBucket.Arn
+            - Effect: Allow
+              Action: ssm:GetParameter
+              Resource: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${TokenParameterName}
+            - Effect: Allow
+              Action: kms:Decrypt
+              Resource: "*"
+              Condition:
+                StringEquals:
+                  kms:ViaService: !Sub ssm.${AWS::Region}.amazonaws.com
+      Events:
+        Proxy:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref TrilhoHttpApi
+            Path: /{proxy+}
+            Method: ANY
+      Tags:
+        Project: trilho
+        Env: production
+
+  TrilhoHttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      Description: Trilho hosted API
+      # Personal use: a low ceiling keeps a leaked token or a looping bot from running up the bill.
+      DefaultRouteSettings:
+        ThrottlingBurstLimit: 20
+        ThrottlingRateLimit: 10
+      CorsConfiguration:
+        AllowOrigins: ["*"]
+        AllowMethods: [GET, PUT, POST, OPTIONS]
+        AllowHeaders:
+          - authorization
+          - content-type
+          - if-match
+          - if-none-match
+          - mcp-protocol-version
+          - mcp-session-id
+          - x-trilho-author
+        ExposeHeaders: [etag]
+        MaxAge: 600
+      Tags:
+        Project: trilho
+        Env: production
+
+  TrilhoLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${TrilhoFunction}
+      RetentionInDays: 7
+      Tags:
+        - { Key: Project, Value: trilho }
+
+  TrilhoBudget:
+    Type: AWS::Budgets::Budget
+    Properties:
+      Budget:
+        BudgetName: trilho-production-monthly
+        BudgetType: COST
+        TimeUnit: MONTHLY
+        BudgetLimit:
+          Amount: !Ref MonthlyBudget
+          Unit: USD
+        CostFilters:
+          TagKeyValue:
+            - "user:Project$trilho"
+      NotificationsWithSubscribers:
+        - Notification:
+            NotificationType: ACTUAL
+            ComparisonOperator: GREATER_THAN
+            Threshold: 80
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - SubscriptionType: EMAIL
+              Address: !Ref BillingAlertEmail
+        - Notification:
+            NotificationType: FORECASTED
+            ComparisonOperator: GREATER_THAN
+            Threshold: 100
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - SubscriptionType: EMAIL
+              Address: !Ref BillingAlertEmail
+
+  CustomDomain:
+    Type: AWS::ApiGatewayV2::DomainName
+    Condition: HasDomain
+    Properties:
+      DomainName: !Ref DomainName
+      DomainNameConfigurations:
+        - CertificateArn: !Ref CertificateArn
+          EndpointType: REGIONAL
+          SecurityPolicy: TLS_1_2
+      Tags:
+        Project: trilho
+
+  CustomDomainMapping:
+    Type: AWS::ApiGatewayV2::ApiMapping
+    Condition: HasDomain
+    Properties:
+      ApiId: !Ref TrilhoHttpApi
+      DomainName: !Ref CustomDomain
+      Stage: !Ref TrilhoHttpApiApiGatewayDefaultStage
+
+Outputs:
+  ApiUrl:
+    Description: Base URL (MCP at /mcp, workspace at /workspace)
+    Value: !Sub https://${TrilhoHttpApi}.execute-api.${AWS::Region}.amazonaws.com
+  CustomDomainTarget:
+    Condition: HasDomain
+    Description: CNAME target for DomainName
+    Value: !GetAtt CustomDomain.RegionalDomainName
+  Bucket:
+    Value: !Ref WorkspaceBucket
