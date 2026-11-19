@@ -19,7 +19,7 @@ import {
   STATUS_IDS,
 } from './tools';
 
-export const SERVER_VERSION = '0.2.0';
+export const SERVER_VERSION = '0.3.0';
 
 const status = z
   .enum(STATUS_IDS)
