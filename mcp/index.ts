@@ -3,13 +3,15 @@
 //
 //   TRILHO_DATA_FILE  path to trilho.json (default: the desktop app's data folder)
 //   TRILHO_AUTHOR     name shown on comments added through the connector (default: Claude)
+//
+// The hosted version (HTTP, same tools) lives in lambda.ts.
 
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { createTrilhoServer } from './server';
-import { dataFilePath } from './storage';
+import { dataFilePath, fileStore } from './storage';
 
 const server = createTrilhoServer({
-  dataFile: dataFilePath(),
+  store: fileStore(dataFilePath()),
   author: process.env.TRILHO_AUTHOR?.trim() || 'Claude',
 });
 

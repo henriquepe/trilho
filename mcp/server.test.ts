@@ -6,14 +6,14 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { addTeam, emptyState } from '../src/model';
 import { createTrilhoServer } from './server';
-import { dataFilePath } from './storage';
+import { dataFilePath, fileStore } from './storage';
 
 let folder: string;
 let dataFile: string;
 let client: Client;
 
 async function connect(file: string) {
-  const server = createTrilhoServer({ dataFile: file, author: 'Henrique' });
+  const server = createTrilhoServer({ store: fileStore(file), author: 'Henrique' });
   const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
   client = new Client({ name: 'test', version: '1.0.0' });
   await Promise.all([server.connect(serverSide), client.connect(clientSide)]);
