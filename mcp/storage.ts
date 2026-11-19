@@ -6,6 +6,16 @@ import type { AppState } from '../src/types';
 
 const APP_ID = 'com.henriquepires.trilho';
 
+/** A change to the workspace: the new state plus whatever the tool returns. */
+export type WorkspaceChange<T> = (state: AppState) => { state: AppState; result: T };
+
+/** Where the MCP server reads and writes the workspace: a local file or the hosted copy. */
+export interface WorkspaceStore {
+  read(): Promise<AppState>;
+  /** Reads, changes and writes in one step. Hosted stores retry when another client wrote first. */
+  update<T>(change: WorkspaceChange<T>): Promise<T>;
+}
+
 /** Same file the desktop app uses (Tauri's app data dir), unless TRILHO_DATA_FILE overrides it. */
 export function dataFilePath(env: NodeJS.ProcessEnv = process.env, platform = process.platform): string {
   if (env.TRILHO_DATA_FILE) return env.TRILHO_DATA_FILE;
@@ -46,8 +56,15 @@ export function writeWorkspace(path: string, state: AppState): void {
  * Reads, changes and writes the workspace in one synchronous step, so concurrent
  * edits from the app have the smallest possible window to collide.
  */
-export function updateWorkspace<T>(path: string, change: (state: AppState) => { state: AppState; result: T }): T {
+export function updateWorkspace<T>(path: string, change: WorkspaceChange<T>): T {
   const { state, result } = change(readWorkspace(path));
   writeWorkspace(path, state);
   return result;
+}
+
+export function fileStore(path: string): WorkspaceStore {
+  return {
+    read: async () => readWorkspace(path),
+    update: async (change) => updateWorkspace(path, change),
+  };
 }

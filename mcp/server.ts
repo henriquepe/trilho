@@ -1,6 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import { readWorkspace, updateWorkspace } from './storage';
+import type { WorkspaceStore } from './storage';
 import {
   commentOnIssue,
   createBacklog,
@@ -57,16 +57,16 @@ function guarded<A>(handler: (args: A) => unknown) {
   };
 }
 
-export function createTrilhoServer(options: { dataFile: string; author: string }): McpServer {
-  const { dataFile, author } = options;
-  const read = () => readWorkspace(dataFile);
+export function createTrilhoServer(options: { store: WorkspaceStore; author: string }): McpServer {
+  const { store, author } = options;
+  const read = () => store.read();
   const server = new McpServer(
     { name: 'trilho', version: SERVER_VERSION },
     {
       instructions:
-        'Trilho is a local issue tracker. Backlogs have short keys (e.g. APP) and issues are ' +
+        'Trilho is an issue tracker. Backlogs have short keys (e.g. APP) and issues are ' +
         'addressed as KEY-NUMBER (APP-12). Use search_issues to find work, get_issue for details. ' +
-        'Changes are saved to the local workspace immediately and appear in the open app.',
+        'Changes are saved to the workspace immediately and appear in the open app.',
     },
   );
 
@@ -80,7 +80,7 @@ export function createTrilhoServer(options: { dataFile: string; author: string }
       description: 'Lists every backlog with its key and open/total issue counts.',
       annotations: readOnly,
     },
-    guarded(() => listBacklogs(read())),
+    guarded(async () => listBacklogs(await read())),
   );
 
   server.registerTool(
@@ -91,7 +91,7 @@ export function createTrilhoServer(options: { dataFile: string; author: string }
       inputSchema: { status: z.array(projectStatus).optional().describe('Only these statuses') },
       annotations: readOnly,
     },
-    guarded((args: { status?: (typeof PROJECT_STATUS_IDS)[number][] }) => listProjects(read(), args)),
+    guarded(async (args: { status?: (typeof PROJECT_STATUS_IDS)[number][] }) => listProjects(await read(), args)),
   );
 
   server.registerTool(
@@ -101,7 +101,7 @@ export function createTrilhoServer(options: { dataFile: string; author: string }
       description: 'Lists labels and how many issues use each one.',
       annotations: readOnly,
     },
-    guarded(() => listLabels(read())),
+    guarded(async () => listLabels(await read())),
   );
 
   server.registerTool(
@@ -123,7 +123,7 @@ export function createTrilhoServer(options: { dataFile: string; author: string }
       },
       annotations: readOnly,
     },
-    guarded((args: Parameters<typeof searchIssues>[1]) => searchIssues(read(), args)),
+    guarded(async (args: Parameters<typeof searchIssues>[1]) => searchIssues(await read(), args)),
   );
 
   server.registerTool(
@@ -134,8 +134,8 @@ export function createTrilhoServer(options: { dataFile: string; author: string }
       inputSchema: { key: z.string().describe('Issue key, e.g. APP-12') },
       annotations: readOnly,
     },
-    guarded(({ key }: { key: string }) => {
-      const state = read();
+    guarded(async ({ key }: { key: string }) => {
+      const state = await read();
       return issueDetails(state, findIssue(state, key));
     }),
   );
@@ -152,7 +152,7 @@ export function createTrilhoServer(options: { dataFile: string; author: string }
       },
       annotations: write,
     },
-    guarded((args: Parameters<typeof createIssue>[1]) => updateWorkspace(dataFile, (s) => createIssue(s, args))),
+    guarded((args: Parameters<typeof createIssue>[1]) => store.update((s) => createIssue(s, args))),
   );
 
   server.registerTool(
@@ -170,7 +170,7 @@ export function createTrilhoServer(options: { dataFile: string; author: string }
       },
       annotations: { ...write, idempotentHint: true },
     },
-    guarded((args: Parameters<typeof editIssue>[1]) => updateWorkspace(dataFile, (s) => editIssue(s, args))),
+    guarded((args: Parameters<typeof editIssue>[1]) => store.update((s) => editIssue(s, args))),
   );
 
   server.registerTool(
@@ -182,7 +182,7 @@ export function createTrilhoServer(options: { dataFile: string; author: string }
       annotations: write,
     },
     guarded((args: { key: string; body: string }) =>
-      updateWorkspace(dataFile, (s) => commentOnIssue(s, { ...args, author })),
+      store.update((s) => commentOnIssue(s, { ...args, author })),
     ),
   );
 
@@ -194,7 +194,7 @@ export function createTrilhoServer(options: { dataFile: string; author: string }
       inputSchema: { name: z.string().min(1), key: z.string().optional() },
       annotations: write,
     },
-    guarded((args: { name: string; key?: string }) => updateWorkspace(dataFile, (s) => createBacklog(s, args))),
+    guarded((args: { name: string; key?: string }) => store.update((s) => createBacklog(s, args))),
   );
 
   server.registerTool(
@@ -210,7 +210,7 @@ export function createTrilhoServer(options: { dataFile: string; author: string }
       },
       annotations: write,
     },
-    guarded((args: Parameters<typeof createProject>[1]) => updateWorkspace(dataFile, (s) => createProject(s, args))),
+    guarded((args: Parameters<typeof createProject>[1]) => store.update((s) => createProject(s, args))),
   );
 
   server.registerTool(
@@ -227,7 +227,7 @@ export function createTrilhoServer(options: { dataFile: string; author: string }
       },
       annotations: { ...write, idempotentHint: true },
     },
-    guarded((args: Parameters<typeof editProject>[1]) => updateWorkspace(dataFile, (s) => editProject(s, args))),
+    guarded((args: Parameters<typeof editProject>[1]) => store.update((s) => editProject(s, args))),
   );
 
   return server;
