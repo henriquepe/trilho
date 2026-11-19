@@ -9,7 +9,7 @@ import { createTrilhoServer } from './server';
 //
 //   GET  /health        no auth, for smoke checks
 //   POST /mcp           MCP (Streamable HTTP, stateless, JSON responses)
-//   GET  /workspace     the whole workspace, with its ETag
+//   GET  /workspace     the whole workspace, with its ETag (304 when If-None-Match still matches)
 //   PUT  /workspace     replaces it; needs If-Match (or If-None-Match: * to create it)
 //
 // Every route except /health needs `Authorization: Bearer <token>`.
@@ -62,6 +62,10 @@ async function handleWorkspace(request: Request, deps: HttpDeps) {
   if (request.method === 'GET') {
     const current = await deps.object.get();
     if (!current) return json(404, { error: 'Workspace not uploaded yet.' });
+    // The app polls with If-None-Match: an unchanged workspace costs a few bytes, not the whole file.
+    if (request.headers.get('if-none-match') === current.etag) {
+      return new Response(null, { status: 304, headers: { etag: current.etag, 'cache-control': 'no-store' } });
+    }
     return new Response(current.body, {
       status: 200,
       headers: { 'content-type': 'application/json', etag: current.etag, 'cache-control': 'no-store' },
@@ -91,6 +95,9 @@ async function handleWorkspace(request: Request, deps: HttpDeps) {
 export async function handleHttp(request: Request, deps: HttpDeps): Promise<Response> {
   const path = new URL(request.url).pathname.replace(/\/+$/, '') || '/';
 
+  // CORS preflight: API Gateway adds the CORS headers, but ANY /{proxy+} forwards OPTIONS here
+  // and browsers need a 2xx for it. Preflights never carry the token.
+  if (request.method === 'OPTIONS') return new Response(null, { status: 204 });
   if (path === '/health') return json(200, { ok: true });
   if (path !== '/mcp' && path !== '/workspace') return json(404, { error: 'Not found.' });
   if (!(await authorized(request, deps.tokens))) {

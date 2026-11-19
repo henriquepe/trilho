@@ -156,6 +156,22 @@ claude mcp add -s user --transport http trilho "$TRILHO_URL/mcp" -H "Authorizati
 
 To use a custom domain, pass `DomainName` and `CertificateArn` (an ACM certificate in the same region), then point a CNAME at the `CustomDomainTarget` output.
 
+### Connecting the app
+
+Click the cloud icon at the bottom of the sidebar, then enter the URL and token. When it connects, the app merges this workspace with the hosted one, so nothing on either side is lost. From then on it:
+
+- checks for changes every 10 seconds and whenever the window regains focus (a `304` when nothing changed),
+- sends your edits about half a second after you make them,
+- keeps a local copy, so it still opens offline and catches up on reconnect.
+
+When the app and a bot change the same workspace, the changes are merged record by record and field by field against the last copy both sides shared. A comment from a bot and your title edit on the same issue both survive. Only when both sides change the same field does your edit win, and an edit always beats a deletion. Issues created on both sides with the same number keep the remote number, and the local one moves to the next free number.
+
+To try cloud mode without AWS, run the same handler locally with an in-memory workspace:
+
+```bash
+npx vite-node mcp/devServer.ts -- 8787 dev-token
+```
+
 ## Stack
 
 Vite, React 19, TypeScript, Tailwind CSS v4 and shadcn/ui; Tauri 2 for the desktop app; Vitest for tests.

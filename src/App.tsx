@@ -4,6 +4,7 @@ import { CommandPalette } from '@/components/CommandPalette';
 import { ColorDot } from '@/components/icons';
 import { IssuePage } from '@/components/IssuePage';
 import { IssuesView } from '@/components/IssuesView';
+import { CloudModal } from '@/components/CloudModal';
 import { ConfirmModal, NewIssueModal, ProjectModal, TeamModal } from '@/components/Modals';
 import { ProjectPage, ProjectsPage } from '@/components/Projects';
 import { EmptyState } from '@/components/shared';
@@ -89,6 +90,7 @@ export function App() {
       {overlays.newIssue && <NewIssueModal defaults={overlays.newIssue} />}
       {overlays.teamModal && <TeamModal teamId={overlays.teamModal.teamId} />}
       {overlays.projectModal && <ProjectModal />}
+      {overlays.cloudModal && <CloudModal />}
       {overlays.palette && <CommandPalette />}
       {overlays.confirm && <ConfirmModal request={overlays.confirm} />}
     </div>

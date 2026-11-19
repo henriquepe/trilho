@@ -7,6 +7,7 @@
 
 import { S3Client } from '@aws-sdk/client-s3';
 import { GetParameterCommand, SSMClient } from '@aws-sdk/client-ssm';
+import { gzipSync } from 'node:zlib';
 import { handleHttp } from './http';
 import { s3Object } from './remoteStore';
 
@@ -23,6 +24,7 @@ interface HttpApiResult {
   statusCode: number;
   headers: Record<string, string>;
   body: string;
+  isBase64Encoded?: boolean;
 }
 
 const object = s3Object(new S3Client({}), process.env.TRILHO_BUCKET!, process.env.TRILHO_OBJECT_KEY || 'workspace.json');
@@ -53,19 +55,32 @@ export function toRequest(event: HttpApiEvent): Request {
   return new Request(`https://${event.requestContext.domainName}${event.rawPath}${query}`, { method, headers, body });
 }
 
-export async function toResult(response: Response): Promise<HttpApiResult> {
+/** HTTP API does not compress: gzip bodies over 1 KB when the client accepts it (the workspace shrinks ~85%). */
+export async function toResult(response: Response, acceptEncoding = ''): Promise<HttpApiResult> {
   const headers: Record<string, string> = {};
   response.headers.forEach((value, name) => {
     headers[name] = value;
   });
-  return { statusCode: response.status, headers, body: await response.text() };
+  const body = await response.text();
+  if (body.length > 1024 && /\bgzip\b/i.test(acceptEncoding)) {
+    headers['content-encoding'] = 'gzip';
+    headers.vary = 'accept-encoding';
+    return {
+      statusCode: response.status,
+      headers,
+      body: gzipSync(body).toString('base64'),
+      isBase64Encoded: true,
+    };
+  }
+  return { statusCode: response.status, headers, body };
 }
 
 export async function handler(event: HttpApiEvent): Promise<HttpApiResult> {
-  const response = await handleHttp(toRequest(event), {
+  const request = toRequest(event);
+  const response = await handleHttp(request, {
     object,
     tokens,
     defaultAuthor: process.env.TRILHO_AUTHOR?.trim() || 'Claude',
   });
-  return toResult(response);
+  return toResult(response, request.headers.get('accept-encoding') ?? '');
 }

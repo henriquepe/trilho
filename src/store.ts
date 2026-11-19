@@ -1,9 +1,17 @@
 import { createStore } from './lib/createStore';
 import * as model from './model';
 import { loadState, onExternalChange, saveState } from './persist';
+import { cloudClient, loadCloudConfig } from './sync/cloud';
+import { createCloudSync, type CloudSync, type SyncStatus } from './sync/engine';
 import type { AppState, Project } from './types';
 
 const store = createStore<AppState>(model.emptyState());
+
+/** Cloud sync state for the UI: null when the app works only with local data. */
+export const cloudStatus = createStore<SyncStatus | null>(null);
+let cloud: CloudSync | null = null;
+let pushTimer: ReturnType<typeof setTimeout> | undefined;
+const POLL_MS = 10_000;
 
 let hydrated = false;
 let saveTimer: ReturnType<typeof setTimeout> | undefined;
@@ -13,12 +21,41 @@ async function persistNow() {
   clearTimeout(saveTimer);
   saveTimer = undefined;
   try {
+    // With the cloud on, the local file (or IndexedDB) stays as an offline copy.
     await saveState(store.get());
     channel?.postMessage('saved');
   } catch (error) {
     console.error('Failed to save state', error);
   }
+  schedulePush();
 }
+
+function schedulePush() {
+  if (!cloud) return;
+  clearTimeout(pushTimer);
+  pushTimer = setTimeout(() => void cloud?.push(), 400);
+}
+
+/** Shows a workspace merged from the cloud and keeps the offline copy current. */
+function applyFromCloud(next: AppState) {
+  store.set(next);
+  void saveState(next).catch((error) => console.error('Failed to save the offline copy', error));
+}
+
+async function startCloud(): Promise<AppState | null> {
+  const config = loadCloudConfig();
+  if (!config) return null;
+  cloud = createCloudSync(cloudClient(config), {
+    getLocal: store.get,
+    setLocal: applyFromCloud,
+    onStatus: (status) => cloudStatus.set(status),
+  });
+  const started = await cloud.start();
+  return started && 'state' in started ? started.state : null;
+}
+
+/** Pulls and pushes now (also used by the "Sincronizar" button). */
+export const syncNow = () => cloud?.sync();
 
 function commit(next: AppState) {
   store.set(next);
@@ -29,9 +66,24 @@ function commit(next: AppState) {
 
 /** Loads the saved workspace (empty on first run). Throws if saved data is unreadable. */
 export async function hydrate(): Promise<void> {
-  const raw = await loadState();
-  store.set(raw === null ? model.emptyState() : model.parseState(raw));
+  // Cloud mode loads the hosted copy; offline (or never uploaded) it starts from the local copy
+  // and merges as soon as the cloud answers.
+  const fromCloud = await startCloud();
+  if (fromCloud) {
+    store.set(fromCloud);
+    void saveState(fromCloud).catch((error) => console.error('Failed to save the offline copy', error));
+  } else {
+    const raw = await loadState();
+    store.set(raw === null ? model.emptyState() : model.parseState(raw));
+  }
   hydrated = true;
+  if (cloud) {
+    if (!fromCloud) void cloud.sync();
+    setInterval(() => {
+      if (document.visibilityState === 'visible' && !saveTimer) void cloud?.sync();
+    }, POLL_MS);
+    window.addEventListener('focus', () => void cloud?.sync());
+  }
   // Keep other open tabs in sync, and never lose a pending save on close.
   channel?.addEventListener('message', async () => {
     if (saveTimer) return;
@@ -44,6 +96,7 @@ export async function hydrate(): Promise<void> {
     if (saveTimer) return;
     try {
       store.set(model.parseState(raw));
+      schedulePush();
     } catch (error) {
       console.error('Ignored invalid external data', error);
     }

@@ -61,6 +61,10 @@ describe('auth', () => {
     expect((await send('/workspace', {}, 'second-token')).status).toBe(200);
   });
 
+  it('answers CORS preflights without a token', async () => {
+    expect((await send('/workspace', { method: 'OPTIONS' }, null)).status).toBe(204);
+  });
+
   it('answers 404 for unknown paths', async () => {
     expect((await send('/nope')).status).toBe(404);
   });
@@ -116,6 +120,14 @@ describe('/workspace', () => {
     expect(ok.status).toBe(200);
     expect(ok.headers.get('etag')).not.toBe(etag);
     expect(JSON.parse(object.body()!).teams[0].name).toBe('App');
+  });
+
+  it('answers 304 while the ETag still matches', async () => {
+    const etag = (await send('/workspace')).headers.get('etag')!;
+    const unchanged = await send('/workspace', { headers: { 'if-none-match': etag } });
+    expect(unchanged.status).toBe(304);
+    expect(await unchanged.text()).toBe('');
+    expect((await send('/workspace', { headers: { 'if-none-match': '"old"' } })).status).toBe(200);
   });
 
   it('requires a precondition and a valid workspace', async () => {
@@ -180,5 +192,15 @@ describe('Lambda adapter', () => {
     const result = await toResult(new Response('{"x":1}', { status: 201, headers: { etag: '"e"' } }));
     expect(result).toMatchObject({ statusCode: 201, body: '{"x":1}' });
     expect(result.headers.etag).toBe('"e"');
+  });
+
+  it('gzips large bodies when the client accepts it', async () => {
+    const { gunzipSync } = await import('node:zlib');
+    const big = 'x'.repeat(5000);
+    const zipped = await toResult(new Response(big), 'gzip, deflate, br');
+    expect(zipped).toMatchObject({ isBase64Encoded: true, headers: { 'content-encoding': 'gzip' } });
+    expect(gunzipSync(Buffer.from(zipped.body, 'base64')).toString()).toBe(big);
+    expect((await toResult(new Response(big))).isBase64Encoded).toBeUndefined();
+    expect((await toResult(new Response('small'), 'gzip')).body).toBe('small');
   });
 });

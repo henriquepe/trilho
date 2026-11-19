@@ -24,6 +24,7 @@ interface UiState {
   /** `teamId: null` creates a new team; a string edits that team. */
   teamModal: { teamId: string | null } | null;
   projectModal: boolean;
+  cloudModal: boolean;
   confirm: ConfirmRequest | null;
 }
 
@@ -32,6 +33,7 @@ const closed: UiState = {
   palette: false,
   teamModal: null,
   projectModal: false,
+  cloudModal: false,
   confirm: null,
 };
 
@@ -43,6 +45,7 @@ export const openPalette = () => ui.set({ ...closed, palette: true });
 export const openTeamModal = (teamId: string | null = null) =>
   ui.set({ ...closed, teamModal: { teamId } });
 export const openProjectModal = () => ui.set({ ...closed, projectModal: true });
+export const openCloudModal = () => ui.set({ ...closed, cloudModal: true });
 export const askConfirm = (request: ConfirmRequest) => ui.set({ ...closed, confirm: request });
 export const closeOverlays = () => ui.set(closed);
 export const hasOverlay = () => ui.get() !== closed;
