@@ -11,3 +11,8 @@ imports/
 .claude/
 .DS_Store
 mcp/dist
+
+# Hosted deploy (infra/)
+infra/build
+infra/samconfig.toml
+infra/.aws-sam

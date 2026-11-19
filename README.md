@@ -118,6 +118,44 @@ Open the app once before using the connector, so the data file exists.
 
 If you edit in the app while Claude changes the same workspace, the last save wins. A change you are still typing is never overwritten.
 
+## Hosted mode (AWS)
+
+To share one workspace between machines and bots, Trilho can run on AWS: one Lambda behind an HTTP API, with the workspace kept as a single versioned S3 object. There is no VPC and no database, and personal use costs well under US$ 1 per month. `infra/template.yaml` holds the whole stack.
+
+The API serves:
+
+| Route | Use |
+| --- | --- |
+| `POST /mcp` | MCP connector over Streamable HTTP, with the same tools as the local server |
+| `GET /workspace` | Whole workspace, with its `ETag` |
+| `PUT /workspace` | Replaces the workspace. Needs `If-Match` (or `If-None-Match: *` for the first upload) and answers `412` if someone saved first |
+| `GET /health` | Open health check |
+
+Every route except `/health` needs `Authorization: Bearer <token>`. To sign comments with a bot's name, send `X-Trilho-Author`.
+
+Deploy (requires the AWS SAM CLI):
+
+```bash
+# 1. Tokens: a SecureString, comma-separated if you want one per client
+aws ssm put-parameter --name /trilho/production/tokens --type SecureString --value "<token>"
+
+# 2. Your settings (git-ignored), then deploy
+cp infra/samconfig.example.toml infra/samconfig.toml
+npm run deploy
+
+# 3. Upload the current workspace once
+curl -X PUT "$TRILHO_URL/workspace" -H "Authorization: Bearer <token>" \
+  -H "If-None-Match: *" -H "content-type: application/json" --data-binary @trilho.json
+```
+
+Connect a client:
+
+```bash
+claude mcp add -s user --transport http trilho "$TRILHO_URL/mcp" -H "Authorization: Bearer <token>"
+```
+
+To use a custom domain, pass `DomainName` and `CertificateArn` (an ACM certificate in the same region), then point a CNAME at the `CustomDomainTarget` output.
+
 ## Stack
 
 Vite, React 19, TypeScript, Tailwind CSS v4 and shadcn/ui; Tauri 2 for the desktop app; Vitest for tests.
